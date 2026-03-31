@@ -7,7 +7,7 @@ description: Use when generating weekly PPT outlines from multiple projects' git
 
 ## Overview
 
-Convert **multiple projects' weekly git commits** into a structured Markdown PPT outline. Each project gets an independent narrative (Problem → Solution → Result) using a unified template. The overview slide can note natural cross-project themes, but each project's slides stay self-contained.
+Convert **multiple projects' weekly git commits** into a structured Markdown PPT outline. Each project gets an independent narrative using a unified template. The overview slide can note natural cross-project themes, but each project's slides stay self-contained.
 
 ## When to Use
 
@@ -29,78 +29,93 @@ Convert **multiple projects' weekly git commits** into a structured Markdown PPT
 - `tech` — Full 6-part narrative per project, includes architecture decisions and design choices
 - `report` — Condensed 4-part (Goal → Changes → Impact → Next), focuses on outcomes over implementation
 
-## Pipeline
+## Two-Phase Pipeline
+
+This skill uses a two-phase execution to keep the main context lean — the heavy analysis work happens in subagents, and only the structured results return to the main dialog for PPT assembly.
 
 ```
-git analyze → abstract → storyline → stitch
+Phase 1 (subagent, per project, parallelizable):
+  git logs → classify → abstract → storyline → structured JSON
+
+Phase 2 (main dialog):
+  structured JSONs → PPT stitching → final Markdown outline
 ```
 
-Complete each step before moving to the next. The abstraction step (Step 2) is where raw commits become engineering insight — skipping it produces the "commit流水账" (commit dump) that no one wants to read in a presentation.
+Phase 1 does the expensive per-project work (classifying commits, abstracting into engineering semantics, building narrative). Phase 2 only consumes the compact summaries to assemble the final PPT.
 
-### Step 1: Git Analysis
+## Phase 1: Dispatch Subagents
 
-**Keep:** `feat/feature`, `fix`, `refactor`, `perf`. **Drop:** `chore`, `docs`, `style`.
+For each project, dispatch a subagent with the prompt template below. Multiple projects can be dispatched in parallel.
 
-Output: `change_blocks` per project with `{ type, module, summary, files }`.
+### Subagent Prompt Template
 
-If a project has **0 change_blocks** after filtering (all chores/docs), it's a maintenance week — note it on the overview slide with a brief status, don't create dedicated project slides for empty content.
+Fill in the `{placeholders}` and send to each subagent:
 
-### Step 2: Change Abstraction
+```text
+You are a weekly report analyst. Analyze the following project's git commits for this week's report.
 
-Group related commits into abstracted engineering changes. This is the step that separates a useful report from a commit dump.
+Project: {project_name} (priority: {priority})
+Mode: {tech_or_report}
 
-**Example:** 3 commits — "add auto-layout" + "fix overlap" + "add positioning" → ONE key_change: "Built scene composition system with auto-layout and dense-panel overlap resolution"
+Git logs:
+{git_logs}
 
-**Per-project output:**
+Execute these 3 steps in order:
 
-| Field | Limit | Captures |
-|-------|-------|----------|
-| `weekly_goal` | 1 sentence | What the project aimed to achieve this week |
-| `core_problems` | ≤ 2 | Pain points or blockers addressed |
-| `key_changes` | ≤ 4 | Abstracted changes, not raw commit messages |
-| `technical_highlights` | 1-2 | Engineering decisions (`tech` mode) or outcome metrics (`report` mode) |
-| `current_status` | 1 sentence | Where the project stands now |
-| `next_steps` | 1-2 | What comes next |
+**Step 1: Classify commits**
+- Keep: feat/feature, fix, refactor, perf
+- Drop: chore, docs, style
+- Output: change_blocks list with { type, module, summary }
 
-**When commit info is insufficient:** Infer module from file paths, intent from diffs. When truly impossible to determine → mark as "待确认" (pending confirmation). Fabricating content undermines the report's credibility — the presenter will need to stand behind these words, so they need real information they can verify.
+If 0 change_blocks after filtering → this is a "maintenance week". Output empty results and note it.
 
-### Step 3: Storyline
+**Step 2: Abstract into engineering semantics**
+Group related commits into abstracted changes. Example: "add auto-layout" + "fix overlap" + "add positioning" → ONE key_change: "Built scene composition system with auto-layout and dense-panel overlap resolution"
 
-Each project follows a narrative structure. The mode determines depth:
+Constraints: core_problems ≤ 2, key_changes ≤ 4.
 
-**`tech` mode (6-part, default):**
-1. Goal (Why) → What the project was trying to achieve
-2. Problems (Pain) → What was blocking progress
-3. Key Changes (What) → Abstracted changes
-4. Technical Approach (How) → Architecture decisions, design choices
-5. Result (Impact) → Measurable outcomes
-6. Risk & Next Steps → Open issues and planned actions
+When commit info is insufficient: infer from file paths or diffs. When truly impossible → mark as "待确认". Do NOT fabricate — the presenter needs real information they can verify.
 
-**`report` mode (condensed to 4-part):**
-1. Goal (Why) → Same
-2. Key Changes → Merged What + How, higher-level
-3. Result (Impact) → Same
-4. Next Steps → Same
+**Step 3: Build narrative**
 
-**Sparse data** (0-2 meaningful commits): Combine into a single "Status Update" slide. A slow week doesn't need 4 inflated slides.
+Tech mode (6-part): Goal(Why) → Problems(Pain) → KeyChanges(What) → TechApproach(How) → Result(Impact) → Risk&Next
 
-### Step 4: PPT Stitching
+Report mode (4-part): Goal(Why) → KeyChanges → Result(Impact) → NextSteps
 
-Per-project slide budget by priority:
+Sparse data (0-2 commits): combine into a single "Status Update".
 
-| Priority | Slides | Depth |
-|----------|--------|-------|
-| Core (1st) | 3-4 | Full narrative |
-| Supporting (2nd) | 2-3 | Focused on key changes |
-| Exploratory (3rd+) | 1-2 | Status update only |
+**Return ONLY this JSON (no other commentary):**
 
-**Overview slide:** 1 sentence per project. Natural cross-project themes are fine here when they genuinely emerge (e.g., "both projects improved reliability this week"), but don't force connections that don't exist.
+{
+  "project": "{project_name}",
+  "priority": "{priority}",
+  "weekly_goal": "1 sentence",
+  "core_problems": ["≤ 2 items, or empty if maintenance week"],
+  "key_changes": ["≤ 4 abstracted changes, or empty"],
+  "technical_highlights": ["1-2 items"],
+  "current_status": "1 sentence",
+  "next_steps": ["1-2 items"],
+  "narrative": {
+    "goal": "...",
+    "problems": "...",
+    "key_changes": "...",
+    "technical_approach": "... (omit in report mode)",
+    "result": "...",
+    "risk_and_next": "..."
+  },
+  "is_maintenance_week": false
+}
+```
 
-**Final slide:** Aggregate next steps from all projects, one section per project.
+### Handling Results
 
-## Output Format
+Collect the JSON from each subagent. If a subagent returns `is_maintenance_week: true`, that project gets only a brief line on the overview slide — no dedicated project slides.
 
-Use this template:
+## Phase 2: PPT Stitching (Main Dialog)
+
+Using the collected JSONs, assemble the final Markdown PPT outline.
+
+### Slide Structure
 
 ```markdown
 ---
@@ -110,52 +125,68 @@ Use this template:
 
 ---
 # Slide 2: 本周总览
-- **project-a：** <one-sentence summary>
-- **project-b：** <one-sentence summary>
-- **project-c：** <one-sentence summary>
+- **project-a：** {weekly_goal}
+- **project-b：** {weekly_goal}
+- **project-c：** {weekly_goal}
 
 ---
 # Slide 3: project-a — 背景 & 问题
 ## 背景
-<weekly_goal>
+{narrative.goal}
 ## 本周核心问题
-<core_problems>
+{narrative.problems}
 
 ---
 # Slide 4: project-a — 关键改动 & 技术方案
 ## 关键改动
-<key_changes>
+{narrative.key_changes}
 ## 技术方案
-<technical_approach>
+{narrative.technical_approach}
 
 ---
 # Slide 5: project-a — 成果 & 下一步
 ## 当前成果
-<current_result>
+{narrative.result}
 ## 风险 & 下一步
-<risks_and_next_steps>
+{narrative.risk_and_next}
 
 ---
 # Final: 总结 & 下一步
 ## 全局总结
 | 项目 | 状态 | 关键进展 |
 |------|------|----------|
-| project-a | <status> | <summary> |
-| project-b | <status> | <summary> |
+| project-a | {current_status} | {weekly_goal} |
+| project-b | {current_status} | {weekly_goal} |
 
 ## 各项目下一步
-- **project-a：** <next_steps>
-- **project-b：** <next_steps>
+- **project-a：** {next_steps}
+- **project-b：** {next_steps}
 ```
+
+### Slide Budget by Priority
+
+| Priority | Slides | Depth |
+|----------|--------|-------|
+| Core (1st) | 3-4 | Full narrative |
+| Supporting (2nd) | 2-3 | Focused on key changes |
+| Exploratory (3rd+) | 1-2 | Status update only |
+
+### Overview Slide
+
+1 sentence per project. Natural cross-project themes are fine here when they genuinely emerge (e.g., "both projects improved reliability this week"), but don't force connections that don't exist.
+
+### Final Slide
+
+Aggregate next steps from all projects, one section per project.
 
 ## Anti-Patterns
 
-- **commit流水账** — Listing commits verbatim ("修复bug", "调整逻辑", "优化代码"). This happens when Step 2 is skipped. Always group and abstract into engineering-level descriptions.
+- **commit流水账** — Listing commits verbatim. This happens when abstraction is skipped. Always group and abstract into engineering-level descriptions.
 
 - **项目拼接** — Each project gets a different slide format. Apply the same narrative template uniformly — vary depth by priority, not structure.
 
-- **没有目标** — Describing "what happened" without "why it matters." Every project needs a `weekly_goal` that frames the work. "做了一些优化" is not a goal.
+- **没有目标** — "what happened" without "why it matters." Every project needs a `weekly_goal`. "做了一些优化" is not a goal.
 
-- **跨项目强行融合** — Inventing cross-project themes in project-specific slides. Natural connections are welcome on the overview slide, but each project's narrative stays independent.
+- **跨项目强行融合** — Inventing cross-project themes in project-specific slides. Natural connections are welcome on the overview slide only.
 
 - **Raw git appendix** — Logs are input for analysis, not output for presentation. If the audience needs commit details, link to the repo.
