@@ -19,21 +19,23 @@ Convert **multiple projects' weekly git commits** into a structured Markdown PPT
 
 ## Inputs
 
-| Input | Required | How to get |
-|-------|----------|-----------|
-| Git logs per project | Yes | User provides, or run `git log --oneline --since="last week"` per repo |
-| Project priority order | Recommended | Infer from commit volume if not specified |
-| Mode: `tech` / `report` | Optional (default: `tech`) | Ask user or infer from context |
+| Parameter | Required | Default | How to resolve |
+|-----------|----------|---------|----------------|
+| Time range | Optional | `this_week` | "本周" → this_week; "上周" → last_week |
+| Projects (name + repo path) | Yes | — | From prompt, or ask user |
+| Mode: `tech` / `report` | Optional | `tech` | Infer from context |
+| Priority order | Optional | Auto | Infer from commit volume |
 
 **Mode controls output depth:**
 - `tech` — Full 6-part narrative per project, includes architecture decisions and design choices
 - `report` — Condensed 4-part (Goal → Changes → Impact → Next), focuses on outcomes over implementation
 
-## Two-Phase Pipeline
-
-This skill uses a two-phase execution to keep the main context lean — the heavy analysis work happens in subagents, and only the structured results return to the main dialog for PPT assembly.
+## Pipeline
 
 ```
+Phase 0 (main dialog):
+  parse prompt → confirm scope → collect git logs
+
 Phase 1 (subagent, per project, parallelizable):
   git logs → classify → abstract → storyline → structured JSON
 
@@ -41,7 +43,37 @@ Phase 2 (main dialog):
   structured JSONs → PPT stitching → final Markdown outline
 ```
 
-Phase 1 does the expensive per-project work (classifying commits, abstracting into engineering semantics, building narrative). Phase 2 only consumes the compact summaries to assemble the final PPT.
+Phase 0 gathers scope and collects raw git data. Phase 1 does the expensive per-project analysis in subagents (classifying commits, abstracting, building narrative). Phase 2 assembles the compact summaries into the final PPT outline.
+
+## Phase 0: Scope Gathering
+
+Parse the user's prompt and collect missing parameters before dispatching subagents.
+
+### Parameter Resolution
+
+- **Time range**: Parse from prompt ("本周"/"上周", "this week"/"last week"). Default: `this_week`. Only ask if ambiguous.
+- **Projects**: Parse project names and repo paths from prompt. If missing → ask: "请提供要包含的项目名称和 repo 路径". This is the only parameter that cannot be defaulted.
+- **Mode**: Infer from context. Default: `tech`.
+
+Don't confirm defaults — proceed when all required parameters are resolved.
+
+### Date Calculation
+
+- `this_week`: current week's Monday → today
+- `last_week`: previous week's Monday → previous week's Sunday
+
+### Git Log Collection
+
+For each project, run:
+```bash
+git -C <repo_path> log --oneline --since="<start_date>"
+```
+
+For `last_week`, also add `--until="<this_monday_date>"`. Dates are YYYY-MM-DD format.
+
+If a repo has no commits in the range, note it as a "maintenance week" for that project.
+
+Pass the collected logs into Phase 1's subagent prompt template as `{git_logs}`.
 
 ## Phase 1: Dispatch Subagents
 
