@@ -22,8 +22,8 @@ Convert **multiple projects' weekly git commits** into a structured Markdown PPT
 
 | Phase | Executor | Input | Output |
 |-------|----------|-------|--------|
-| 0: Scope | Main dialog | User prompt | Git logs + params + work streams |
-| 1: Analysis | Subagent × N | Git logs + template | Structured JSON |
+| 0: Scope | Main dialog | User prompt | Git logs + params |
+| 1: Analysis | Subagent × N | Git logs + template | Structured JSON (with work_streams) |
 | 2: Stitching | Main dialog | JSONs | Markdown PPT outline |
 
 ## Inputs
@@ -39,21 +39,11 @@ Convert **multiple projects' weekly git commits** into a structured Markdown PPT
 
 **Priority (auto):** Sort by commit count descending. ≥10 commits → Core; 5-9 → Supporting; <5 → Exploratory. User override takes precedence.
 
-**Work streams:** When only 1 project is provided, auto-cluster its commits into work streams based on module paths, commit prefixes, or semantic patterns (e.g. `feat(pipeline):` vs `fix(characters):`). Each work stream becomes a narrative unit similar to a project. If the user explicitly provides work streams, use those directly.
+**Work streams:** The subagent identifies work streams from commit patterns — each stream is a narratively independent group of changes. Multi-project mode: one stream per project by default. Single-project mode: the subagent decides whether to split into streams based on commit clustering. See [references/subagent-prompt.md](references/subagent-prompt.md) for the detection criteria.
 
 ## Phase 0: Scope Gathering
 
 Parse the user's prompt and collect missing parameters before dispatching subagents.
-
-### Work Stream Detection (single-project)
-
-When only 1 project is provided, analyze commit patterns to split into work streams:
-
-1. **Group by module/prefix** — commits sharing `scope(xxx)` prefixes, file path roots, or semantic keywords cluster into a work stream
-2. **Name each stream** — derive a concise name from the dominant pattern (e.g. "跨集滚动 Pipeline 架构演进" from a cluster of `feat(pipeline):` commits)
-3. **Dispatch per stream** — each work stream gets its own subagent, just like a multi-project pipeline
-
-If commits don't naturally cluster (e.g. scattered chores), treat the whole project as a single stream.
 
 ### Date Calculation
 
@@ -78,7 +68,7 @@ Pass collected logs into Phase 1's subagent as `{git_logs}`.
 
 ## Phase 1: Dispatch Subagents
 
-For each project, dispatch a subagent using the template in [references/subagent-prompt.md](references/subagent-prompt.md). Multiple projects run in parallel.
+For each project, dispatch a subagent using the template in [references/subagent-prompt.md](references/subagent-prompt.md). Multiple projects run in parallel. The subagent returns a `work_streams` array — each stream is an independent narrative unit with its own technical approach.
 
 **Error handling:**
 - Subagent returns non-JSON → retry with "Return ONLY valid JSON, no markdown fencing"
@@ -86,13 +76,21 @@ For each project, dispatch a subagent using the template in [references/subagent
 
 ## Phase 2: PPT Stitching
 
-Assemble the final Markdown PPT outline from collected JSONs. Apply [references/slide-template.md](references/slide-template.md) per project (or per work stream in single-project mode) based on mode and priority.
+Assemble the final Markdown PPT outline from collected JSONs. Each project's `work_streams` array drives the slide layout. Apply [references/slide-template.md](references/slide-template.md) per stream based on mode and priority.
 
-**Slide budget:** Core projects/work streams get 3-4 slides with full narrative. Supporting gets 2-3 focused slides. Exploratory gets 1-2 status-only slides.
+**Slide budget per stream (by total stream count):**
 
-**Overview slide:** 1 sentence per project or work stream. Natural cross-project/cross-stream themes are fine but don't force them.
+| Stream count | Core stream | Supporting stream | Exploratory stream |
+|---|---|---|---|
+| 1 | 3-4 slides (full narrative) | 2-3 slides | 1-2 slides |
+| 2-3 | 2-3 slides (background + tech/approach combined) | 1-2 slides | 1 slide |
+| 4+ | 2 slides (key changes + results) | 1 slide | merge into overview |
 
-**Summary slide:** Aggregate next steps and status from all projects/work streams into one table.
+When streams share close context (e.g. a bug fix stream and the feature it fixes), consider merging their slides to avoid redundancy.
+
+**Overview slide:** 1 sentence per stream. Natural cross-stream themes are fine when they genuinely emerge, but don't force them.
+
+**Summary slide:** Aggregate next steps and status from all streams into one table.
 
 ## Anti-Patterns
 
@@ -100,7 +98,7 @@ Assemble the final Markdown PPT outline from collected JSONs. Apply [references/
 |-------------|---------|-----|
 | commit流水账 | Commits listed verbatim | Group and abstract into engineering descriptions |
 | 项目拼接 | Each project has different slide format | Apply same template; vary depth by priority |
-| 没有目标 | "做了一些优化" without why | Every project/work stream needs a `weekly_goal` |
+| 没有目标 | "做了一些优化" without why | Every stream needs a clear goal |
 | 跨项目强行融合 | Invented themes in project slides | Keep cross-project themes on overview slide only |
 | Raw git appendix | Commit logs in main slides | Logs are input, not output. Use optional appendix for verification |
 
