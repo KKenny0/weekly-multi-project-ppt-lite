@@ -16,13 +16,13 @@ Convert **multiple projects' weekly git commits** into a structured Markdown PPT
 - Multiple projects running in parallel need a consolidated weekly report
 - User wants git history summarized into presentation format
 
-**Not for:** Single-project reports, actual .pptx generation, non-git-based reporting.
+**Not for:** Actual .pptx generation, non-git-based reporting.
 
 ## Quick Reference
 
 | Phase | Executor | Input | Output |
 |-------|----------|-------|--------|
-| 0: Scope | Main dialog | User prompt | Git logs + params |
+| 0: Scope | Main dialog | User prompt | Git logs + params + work streams |
 | 1: Analysis | Subagent × N | Git logs + template | Structured JSON |
 | 2: Stitching | Main dialog | JSONs | Markdown PPT outline |
 
@@ -39,9 +39,21 @@ Convert **multiple projects' weekly git commits** into a structured Markdown PPT
 
 **Priority (auto):** Sort by commit count descending. ≥10 commits → Core; 5-9 → Supporting; <5 → Exploratory. User override takes precedence.
 
+**Work streams:** When only 1 project is provided, auto-cluster its commits into work streams based on module paths, commit prefixes, or semantic patterns (e.g. `feat(pipeline):` vs `fix(characters):`). Each work stream becomes a narrative unit similar to a project. If the user explicitly provides work streams, use those directly.
+
 ## Phase 0: Scope Gathering
 
 Parse the user's prompt and collect missing parameters before dispatching subagents.
+
+### Work Stream Detection (single-project)
+
+When only 1 project is provided, analyze commit patterns to split into work streams:
+
+1. **Group by module/prefix** — commits sharing `scope(xxx)` prefixes, file path roots, or semantic keywords cluster into a work stream
+2. **Name each stream** — derive a concise name from the dominant pattern (e.g. "跨集滚动 Pipeline 架构演进" from a cluster of `feat(pipeline):` commits)
+3. **Dispatch per stream** — each work stream gets its own subagent, just like a multi-project pipeline
+
+If commits don't naturally cluster (e.g. scattered chores), treat the whole project as a single stream.
 
 ### Date Calculation
 
@@ -74,13 +86,13 @@ For each project, dispatch a subagent using the template in [references/subagent
 
 ## Phase 2: PPT Stitching
 
-Assemble the final Markdown PPT outline from collected JSONs. Apply [references/slide-template.md](references/slide-template.md) per project based on mode and priority.
+Assemble the final Markdown PPT outline from collected JSONs. Apply [references/slide-template.md](references/slide-template.md) per project (or per work stream in single-project mode) based on mode and priority.
 
-**Slide budget:** Core projects get 3-4 slides with full narrative. Supporting gets 2-3 focused slides. Exploratory gets 1-2 status-only slides.
+**Slide budget:** Core projects/work streams get 3-4 slides with full narrative. Supporting gets 2-3 focused slides. Exploratory gets 1-2 status-only slides.
 
-**Overview slide:** 1 sentence per project. Natural cross-project themes are fine but don't force them.
+**Overview slide:** 1 sentence per project or work stream. Natural cross-project/cross-stream themes are fine but don't force them.
 
-**Summary slide:** Aggregate next steps and status from all projects into one table.
+**Summary slide:** Aggregate next steps and status from all projects/work streams into one table.
 
 ## Anti-Patterns
 
@@ -88,6 +100,13 @@ Assemble the final Markdown PPT outline from collected JSONs. Apply [references/
 |-------------|---------|-----|
 | commit流水账 | Commits listed verbatim | Group and abstract into engineering descriptions |
 | 项目拼接 | Each project has different slide format | Apply same template; vary depth by priority |
-| 没有目标 | "做了一些优化" without why | Every project needs a `weekly_goal` |
+| 没有目标 | "做了一些优化" without why | Every project/work stream needs a `weekly_goal` |
 | 跨项目强行融合 | Invented themes in project slides | Keep cross-project themes on overview slide only |
-| Raw git appendix | Commit logs in output | Logs are input, not output. Link to repo if details needed |
+| Raw git appendix | Commit logs in main slides | Logs are input, not output. Use optional appendix for verification |
+
+## Clarity Over Constraints
+
+The goal is to explain the work clearly, not to hit arbitrary limits. That said:
+
+- **key_changes** should only list items that are distinct enough to warrant separate explanation. If 5 items naturally emerge, include all 5 — but ask whether any can be merged for narrative coherence.
+- **Slide density** should match what a presenter can actually talk through. If a slide needs a diagram to explain the approach, that's the right amount. If it's a wall of text that no one would read on screen, split it.
