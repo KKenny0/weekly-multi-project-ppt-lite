@@ -2,6 +2,9 @@
 
 A Claude Code skill that generates structured Markdown PPT outlines from multiple projects' weekly git commit history.
 
+> **Note:** This skill has been migrated to the [work-sync-skills](https://github.com/KKenny0/work-sync-skills) monorepo.
+> This repo is archived and no longer maintained.
+
 ## What It Does
 
 Parses git logs across multiple repositories, classifies and abstracts commits through parallel subagents, then assembles a presentation-style weekly report with per-project narratives.
@@ -18,11 +21,7 @@ Phase 1 runs in parallel across projects for token efficiency.
 
 ## Install
 
-Copy to your local skills directory:
-
-```bash
-cp -r SKILL.md references/ ~/.claude/skills/weekly-multi-project-ppt-lite/
-```
+This skill is now included in the [work-sync-skills](https://github.com/KKenny0/work-sync-skills) plugin. Install the plugin to get this skill along with others.
 
 ## Usage
 
@@ -53,7 +52,7 @@ Trigger phrases:
 ## File Structure
 
 ```
-weekly-multi-project-ppt-lite/
+weekly-ppt-lite/
 ├── SKILL.md                      # Skill definition
 ├── references/
 │   ├── subagent-prompt.md        # Phase 1 analysis template
@@ -63,4 +62,5 @@ weekly-multi-project-ppt-lite/
 
 ## Related
 
+- [work-sync-skills](https://github.com/KKenny0/work-sync-skills) — The monorepo that now contains this skill
 - [weekly-report-ppt](https://github.com/KKenny0/weekly-report-ppt) — For actual `.pptx` file generation (this skill outputs Markdown outlines only)
